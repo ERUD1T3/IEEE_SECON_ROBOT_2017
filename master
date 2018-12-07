@@ -1,0 +1,67 @@
+//Master_Transmitter
+ #include <Wire.h>
+
+unsigned long time;
+bool haha;
+short first, second, third, fourth, fifth;
+int i;
+unsigned int output = 0;
+
+void translate(unsigned int r) {        //translate recieved int into digits
+  fifth = r %10;
+  fourth = (r % 100)/10;
+  third = (r % 1000)/100;
+  second = (r % 10000)/1000;
+  first = (r % 100000)/10000;
+  
+}
+
+void setup() 
+{
+  Wire.begin();
+  Serial.begin(9600);
+  haha = true;
+  
+}
+
+void loop() {
+while (haha == true){
+  Serial.println("exterminate!");
+  //Wire.beginTransmission(8); 
+  //Wire.write('s');       
+  //Wire.endTransmission(); 
+  
+  Wire.requestFrom(8, 1);   // the first byte
+ while(Wire.available())
+ { 
+   unsigned char received = Wire.read();
+   output = received;
+ }
+ 
+ for (i = 0 ; i < 3 ; i++) // next 3 bytes
+ {
+    Wire.requestFrom(8, 1);   
+    while(Wire.available())
+    { 
+       unsigned char received = Wire.read();
+       output |= (received << 8);
+    }
+ }
+ Serial.println(output);
+ time = millis();
+ if (time > 10000){
+  haha = false;
+  }
+ }
+ 
+ if(output == 0)
+  haha = true;
+
+  translate(output);
+  Serial.print(first);
+  Serial.print(second);
+  Serial.print(third);
+  Serial.print(fourth);
+  Serial.print(fifth);
+
+}

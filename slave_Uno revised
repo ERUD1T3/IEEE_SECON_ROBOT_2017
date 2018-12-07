@@ -1,0 +1,463 @@
+#include <Wire.h>
+/* 
+ * For DUTpins, forward, reverse, and
+ * related arrays the index is one less
+ * than the corresponding positions 
+ * numbers - which range from 1 to 5
+ */
+
+bool go = false;
+ 
+const int DUTpins[] = {8, 9, 10, 11, 12};
+const int vhighpin = 7;
+const int vlowpin = 6;
+const int mhighpin = 5;
+const int mlowpin = 4;
+const int measurepin = 0;
+
+int forward[]={0,0,0,0,0};
+int reverse[]={0,0,0,0,0};
+
+/* 
+ * devAtPos contains the device at a given 
+ * position index; position 1 = index 0
+ */
+short devAtPos[]={0,0,0,0,0};
+
+/* Device values are:
+ *  0 = unknown
+ *  1 = wire
+ *  2 = resistor
+ *  3 = capacitor
+ *  4 = inductor
+ *  5 = diode
+ */
+
+const int unknown = 0;
+const int wire = 1;
+const int resistor = 2;
+const int capacitor = 3;
+const int inductor = 4;
+const int diode = 5; 
+
+int openCircuit;
+int shortCircuit;
+
+
+int byteSending = 1;
+int toTransfer = 11111;
+int Shift = toTransfer;
+int mask = 0xFF;
+unsigned char toSend = 0;
+
+
+int  compile(short first, short second, short third, short fourth, short fifth) { //compile results into one int
+
+  int  x = 0;
+  x += first;
+  x += (second*10);
+  x += (third*100);
+  x += (fourth*1000);
+  x += (fifth*10000);
+  return x;
+}
+
+
+void findDiode()
+{
+  int ratio;
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    // prevent divide by 0 in ratio  
+    if (forward[pinM1]==0)
+    {
+      forward[pinM1]=1;
+    }
+    if (reverse[pinM1]==0)
+    {
+      reverse[pinM1]=1;
+    }
+    // compute the ratio of larger over smaller
+    if (forward[pinM1]>=reverse[pinM1])
+    {
+      ratio = forward[pinM1]/reverse[pinM1];
+    }
+    else
+    {
+      ratio = reverse[pinM1]/forward[pinM1];
+    }
+    if (ratio > 5)
+    {
+       devAtPos[pinM1] = diode;
+       return;
+    }
+  }
+  return;  
+}
+
+void findCap()
+{
+  // ignores any position where the device is known
+  // assumes that cap or open will result in less than 200mV
+  const int capMax = 3;
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    if (devAtPos[pinM1] != unknown) continue;
+    if ( (forward[pinM1] + reverse[pinM1])/2  < capMax)
+    {
+      devAtPos[pinM1] = capacitor;
+    }
+  }
+  return;
+}
+
+void findRes()
+{
+  // ignores any position where the device is known
+  // assumes that resistor will result in less than 1250mV
+  const int resMax = 12;
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    if (devAtPos[pinM1] != unknown) continue;
+    if ((forward[pinM1] + reverse[pinM1])/2 < resMax)
+    {
+      devAtPos[pinM1] = resistor;
+    }
+  }
+  return;
+}
+
+void findWireAndChoke()
+{
+  // ignores any position where the device is known
+  // assumes that wire will result in more than 2500mV
+  const int wireMin = 26;
+  const int resMax = 12;
+  int count = 0;
+  int posTemp[] = {0,0};
+  
+  // count the number of unknown greater than the resistor
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    if (devAtPos[pinM1] != unknown) continue;
+    if ((forward[pinM1] + reverse[pinM1])/2 >= resMax)
+    {
+      posTemp[count] = pinM1;
+      count++;
+    }
+  }  
+
+  //  count is 1 or 2 because other cases eliminated
+  if (count == 1) {
+    for (int pinM1=0; pinM1<5; pinM1++) {
+      if (devAtPos[pinM1] != unknown) continue;
+      if ((forward[pinM1] + reverse[pinM1])/2 > wireMin)
+      {
+        devAtPos[pinM1] = wire;
+      }
+      else
+      {
+        devAtPos[pinM1] = inductor;
+      }
+    }
+  }
+  else   //count = 2
+  {
+    if ( forward[posTemp[0]] > forward[posTemp[1]] ) 
+    {
+      devAtPos[posTemp[0]] = wire;      
+      devAtPos[posTemp[1]] = inductor;
+    }    
+    else
+    {
+      devAtPos[posTemp[1]] = wire;      
+      devAtPos[posTemp[0]] = inductor;      
+    }
+  }
+  
+  return;
+}
+
+void analyze() 
+{
+  // clear device knowledge for this analysis
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    devAtPos[pinM1]=0;
+  }
+  findDiode();
+  findCap();
+  findRes();
+  findWireAndChoke();
+}
+
+int measureDUT()
+{
+  const int interval = 100;
+  delay(interval);
+  int discard = analogRead(measurepin);
+  int out = 0;
+  delay(interval);
+  out = out + analogRead(measurepin);
+  delay(interval);
+  out = out + analogRead(measurepin);
+  delay(interval);
+  out = out + analogRead(measurepin);
+  delay(interval);
+  out = out + analogRead(measurepin);
+  out = out + 2;  // makes the integer divide more of a round 
+  out = out/4; 
+  return out;
+}
+
+void normalize()
+{
+  int range;
+  range = shortCircuit - openCircuit;
+  // step through the DUT pins and normalize to range of 32
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    forward[pinM1] = (32*( forward[pinM1] - openCircuit ) + range/2) /range;
+    reverse[pinM1] = (32*( reverse[pinM1] - openCircuit ) + range/2) /range;
+  }      
+}
+
+void calibrate()
+{
+  //entry condition: the DUT switches are off 
+  const int interval = 20;
+  
+  //measure across 1K with nothing else connected
+  digitalWrite(vhighpin, LOW);
+  digitalWrite(vlowpin, LOW);
+  digitalWrite(mlowpin, LOW);
+
+  digitalWrite(mhighpin, HIGH);
+
+  delay(interval);
+  openCircuit = measureDUT();
+
+  //measure the voltage source
+  digitalWrite(vhighpin, HIGH);
+  
+  delay(interval);
+  shortCircuit = measureDUT();
+
+  //disconnect
+  digitalWrite(mhighpin, LOW);
+  digitalWrite(vhighpin, LOW);
+    
+}
+
+void forwardMeasure()
+{
+  //entry condition: the DUT switches are off 
+  const int interval = 20;
+
+  // insure power source and ADC are not connected for reverse 
+  digitalWrite(vlowpin, LOW);
+  digitalWrite(mhighpin, LOW);
+
+  // make sure that the power source and ADC are connected for forward 
+  digitalWrite(vhighpin, HIGH);
+  digitalWrite(mlowpin, HIGH);
+  
+  // step through the DUT pins and measure
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    delay(interval);
+    digitalWrite(DUTpins[pinM1], HIGH);
+    forward[pinM1] = measureDUT();
+    delay(interval);
+    digitalWrite(DUTpins[pinM1], LOW);
+  }  
+  
+  // insure the power source and ADC are not connected for forward 
+  digitalWrite(vhighpin, LOW);
+  digitalWrite(mlowpin, LOW);
+}
+
+void reverseMeasure()
+{
+  //entry condition: the DUT switches are off 
+  const int interval = 20;
+
+  // insure power source and ADC are not connected for forward
+  digitalWrite(vhighpin, LOW);
+  digitalWrite(mlowpin, LOW);
+
+  // make sure that the power source and ADC are connected for reverse 
+  digitalWrite(vlowpin, HIGH);
+  digitalWrite(mhighpin, HIGH);
+  
+  // step through the DUT pins and measure
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    delay(interval);
+    digitalWrite(DUTpins[pinM1], HIGH);
+    reverse[pinM1] = measureDUT();
+    delay(interval);
+    digitalWrite(DUTpins[pinM1], LOW);
+  }  
+  
+  // insure the power source and ADC are not connected for reverse 
+  digitalWrite(vlowpin, LOW);
+  digitalWrite(mhighpin, LOW);
+}
+
+
+void discharge()
+{
+  //entry condition: the DUT switches are off 
+  const int interval = 20;
+  
+  // make sure that the power source and ADC are not connected  
+  digitalWrite(vhighpin, LOW);
+  digitalWrite(vlowpin, LOW);
+  digitalWrite(mhighpin, LOW);
+  digitalWrite(mlowpin, LOW);
+  
+  // step through the DUT pins turning switch on then back off
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    delay(interval);
+    digitalWrite(DUTpins[pinM1], HIGH);
+    delay(interval);
+    digitalWrite(DUTpins[pinM1], LOW);
+  }  
+}
+
+void requestInt()
+{
+
+  Serial.println("data reqested: ");
+  //Wire.write(0xF0);
+  //sample data
+  
+  //toTransfer = compile(5,4,3,2,1);  //sample 
+  
+ if (byteSending == 1) //send packet 1
+ {
+   toSend = Shift & mask;
+   Shift = Shift >> 8;
+   Wire.write(toSend);
+
+  Serial.println(toSend);
+   
+   byteSending = 2;
+ }
+ else if (byteSending == 2) //send packet 2
+ {
+   toSend = Shift & mask;
+   Shift = Shift >> 8;
+   Wire.write(toSend);
+
+
+   Serial.println(toSend);
+   
+   
+   byteSending = 3;
+ }
+ else if (byteSending == 3) //send packet 3
+ {
+   toSend = Shift & mask;
+   Shift = Shift >> 8;
+   Wire.write(toSend);
+
+  Serial.println(toSend);
+   
+   byteSending = 4;
+ }
+ else if (byteSending == 4) //send packet 4
+ {
+   toSend = Shift & mask;
+   Shift = Shift >> 8;
+   Wire.write(toSend);
+
+
+  Serial.println(toSend);
+   
+   byteSending = 1;
+   //initialization for next turn
+   Shift = toTransfer;
+   mask = 0xFF;
+   toSend = 0;
+   go = false;              //done transmit
+ }
+}
+
+void requestEvent() 
+{
+  Serial.println("probe reqested: ");
+  //Wire.write(0xF0);
+  //sample data
+  go = true;         //do probing
+ 
+}
+
+
+void setup() {
+  // put your setup code here, to run once:
+
+  Wire.begin(8);   
+  Serial.begin(9600);
+  Serial.print("init transmission");
+  //Wire.onReceive(receiveEvent);
+  //Wire.onRequest(requestEvent);
+  
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    pinMode(DUTpins[pinM1], OUTPUT);
+    digitalWrite(DUTpins[pinM1], LOW);    
+  }
+  pinMode(vhighpin, OUTPUT);
+  digitalWrite(vhighpin, LOW);
+  pinMode(vlowpin, OUTPUT);
+  digitalWrite(vlowpin, LOW);
+  pinMode(mhighpin, OUTPUT);
+  digitalWrite(mhighpin, LOW);
+  pinMode(mlowpin, OUTPUT);
+  digitalWrite(mlowpin, LOW);
+
+}
+
+
+go = true;  //for testing
+
+
+void loop() {
+  // put your main code here, to run repeatedly:
+ if (go) {
+  discharge();
+  forwardMeasure();
+  discharge();
+  reverseMeasure();
+  discharge();
+  calibrate();
+  normalize();
+  Serial.print( openCircuit );
+  Serial.print( "  " );
+  Serial.println( shortCircuit );
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    Serial.print( pinM1 );
+    Serial.print( ":  " );
+    Serial.print( forward[pinM1] );
+    Serial.print( "  " );
+    Serial.println( reverse[pinM1] );
+  }
+  
+  analyze();
+  for (int pinM1=0; pinM1<5; pinM1++) {
+    Serial.print(devAtPos[pinM1]);
+  }
+
+  toTransfer = compile(devAtPos[0],devAtPos[1],devAtPos[2],devAtPos[3],devAtPos[4]);
+  Shift = toTransfer;
+  requestInt();
+  
+  Serial.print("the final compiled value is ");
+  Serial.print(toTransfer);
+  Serial.println("--------");
+  
+  go = false;
+
+ }
+
+    Wire.onRequest(requestInt);
+    Serial.println("Running");
+
+  Serial.println();
+  Serial.println();
+  delay (100);
+
+}

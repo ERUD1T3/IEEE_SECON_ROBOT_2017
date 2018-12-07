@@ -1,0 +1,51 @@
+#include <Servo.h>
+#include <Wire.h>
+#include <Adafruit_MotorShield.h>
+#include "utility/Adafruit_MS_PWMServoDriver.h"
+
+Servo platform;
+int sense1 = 8;
+int sense2 = 9;
+int sensestate1 = 0;
+int sensestate2 = 0;
+bool motion;
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  platform.attach(10);
+  pinMode(sense1, INPUT);
+  pinMode(sense2, INPUT);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+ sensestate1 = digitalRead(sense1);
+ sensestate2 = digitalRead(sense2);
+ if (sensestate1 == HIGH && sensestate2 == LOW)
+ {
+      Serial.print("1st");
+      delay(50);
+      platform.write(80);
+      delay(50);
+ }
+ if (sensestate1 == LOW && sensestate2 == HIGH)
+ {
+      Serial.print("2nd");
+      delay(50);
+      platform.write(-45);
+      delay(50);
+ }
+ if (sensestate1 == LOW && sensestate2 == LOW){
+       Serial.print("3rd");
+      delay(50);
+      platform.write(-90);
+      delay(50);
+ }
+ if (sensestate1 == HIGH && sensestate2 == HIGH){
+       Serial.print("4th");
+      delay(50);
+      platform.write(45);
+      delay(50);
+ }
+}

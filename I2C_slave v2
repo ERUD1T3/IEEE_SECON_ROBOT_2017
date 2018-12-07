@@ -1,0 +1,120 @@
+//Slave_Receiver
+#include <Wire.h>
+
+short first, second, third, fourth, fifth;
+bool toTransm(false);
+
+unsigned int  compile(short fifth, short fourth, short third, short second, short first)  //compile results into one int
+{
+  unsigned int  x = 0;
+  x += first;
+  x += (second*10);
+  x += (third*100);
+  x += (fourth*1000);
+  x += (fifth*10000);
+  return x;
+}
+//unsigned int code = compile(5,4,3,2,1);
+int byteSending(1);
+unsigned int toTransfer(54321);
+unsigned int Shift = toTransfer;
+unsigned int mask(0xFF);
+unsigned char toSend(0);
+
+void requestInt()
+{
+
+  Serial.println("data reqested: ");
+  
+ if (byteSending == 1) //send packet 1
+ {
+   toSend = Shift & mask;
+   Shift = Shift >> 8;
+   Wire.write(toSend);
+   Serial.println("first byte");
+  Serial.println(toSend);
+   
+   byteSending = 2;
+ }
+ else if (byteSending == 2) //send packet 2
+ {
+   toSend = Shift & mask;
+   Shift = Shift >> 8;
+   Wire.write(toSend);
+
+
+   Serial.println("second byte");
+   Serial.println(toSend);
+   
+   
+  // byteSending = 3;
+
+   byteSending = 1;
+   //initialization for next turn
+   Shift = toTransfer;
+   mask = 0xFF;
+   toSend = 0;
+   
+ }
+/* else if (byteSending == 3) //send packet 3
+ {
+   toSend = Shift & mask;
+   Shift = Shift >> 8;
+   Wire.write(toSend);
+
+  
+   Serial.println("third byte");
+  Serial.println(toSend);
+   
+   byteSending = 4;
+ }
+ else if (byteSending == 4) //send packet 4
+ {
+   toSend = Shift & mask;
+   Shift = Shift >> 8;
+   Wire.write(toSend);
+
+  
+  Serial.println("first byte");
+  Serial.println(toSend);
+   
+   byteSending = 1;
+   //initialization for next turn
+   Shift = toTransfer;
+   mask = 0xFF;
+   toSend = 0;
+   
+ } */
+}
+
+void receiveEvent() 
+{
+  while (Wire.available()) 
+  {
+    char c = Wire.read(); 
+    Serial.println("Data rec");
+    Serial.println(c); 
+     if(c == 's'){
+      Serial.print("got an s: ");
+     Serial.println(c);
+     toTransm = true;
+
+     }
+  }
+}
+
+void setup() 
+{
+  Wire.begin(8);   
+  Serial.begin(9600);
+  Serial.print("init transmission");
+
+  Wire.onReceive(receiveEvent);
+  
+  //if(toTransm)
+  Wire.onRequest(requestInt);
+}
+
+void loop() {
+ // Serial.write("Running");
+  }

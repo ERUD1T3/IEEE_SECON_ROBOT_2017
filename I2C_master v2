@@ -1,0 +1,51 @@
+//Master_Transmitter
+ #include <Wire.h>
+
+short first, second, third, fourth, fifth;
+
+void translate(unsigned int r) {        //translate recieved int into digits
+  first = r %10;
+  second = (r % 100)/10;
+  third = (r % 1000)/100;
+  fourth = (r % 10000)/1000;
+  fifth = (r % 100000)/10000;
+  
+}
+
+void setup() 
+{
+  Wire.begin();
+   Serial.begin(9600);
+   Serial.println("initializing...");
+}
+
+void loop() 
+{
+  Wire.beginTransmission(8); 
+  Serial.println(" sending");
+  Wire.write('s');       
+  Wire.endTransmission(); 
+  unsigned int output = 0;
+  Serial.println("done sending");
+  
+  Wire.requestFrom(8, 1, true);   // the first byte
+ while(Wire.available())
+ { 
+   unsigned char received = Wire.read();
+   output = received;
+ }
+ 
+ for (int i = 0 ; i < 1 ; i++) // next  byte
+ {
+    Wire.requestFrom(8, 1, true);   
+    while(Wire.available())
+    { 
+       unsigned char received = Wire.read();
+       output |= (received << 8);
+
+    }
+ }
+ Serial.println(output);
+ output = 0;
+  
+}

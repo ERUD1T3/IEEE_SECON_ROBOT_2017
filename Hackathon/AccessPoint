@@ -1,0 +1,195 @@
+#include <ESP8266WiFi.h>
+#include <Wire.h>  // Only needed for Arduino 1.6.5 and earlier
+//#include "SSD1306.h" // alias for `#include "SSD1306Wire.h"`
+#include <SSD1306.h> // alias for `#include "SSD1306Wire.h"
+
+SSD1306  display(0x3c, D3, D5);
+
+//192.168.4.1
+
+const char WiFiAPPSK[] = "password";
+
+//const int LED_PIN = 5; // Thing's onboard, green LED
+const int ANALOG_PIN = A0; // The only analog pin on the Thing
+const int DIGITAL_PIN = 12; // Digital pin to be read
+
+int ledPin2 = 1;
+int ledPin3 = 2;
+WiFiServer server(80);
+ 
+void setup() {
+  setupOLED();
+  initHardware();
+  setupWiFi();
+  server.begin();
+}
+ 
+void loop() {
+  // Check if a client has connected
+  WiFiClient client = server.available();
+  if (!client) {
+    //display.clear();
+    //display.drawString(0, 0, "No connection");
+    //display.display();
+    return;
+  }
+  else
+  {
+    //display.clear();
+    //display.drawString(0, 0, "Connected");
+    //display.display();
+  }
+
+  //display.drawString(0, 0, "IP:" + WiFi.softAPIP());
+ 
+  // Wait until the client sends some data
+  Serial.println("new client");
+  while(!client.available()){
+    delay(1);
+  }
+ 
+  // Read the first line of the request
+  String request = client.readStringUntil('\r');
+  Serial.println(request);
+  client.flush();
+ 
+  // Match the request
+ 
+  int value1 = LOW;
+  int value2 = LOW;
+  int value3 = LOW;
+  if (request.indexOf("/LED1=ON") != -1)  {
+    digitalWrite(LED_BUILTIN, LOW);
+    value1 = HIGH;
+    display.clear();
+    display.drawString(0, 16, "LED 1: ON");
+  }
+  if (request.indexOf("/LED1=OFF") != -1)  {
+    digitalWrite(LED_BUILTIN, HIGH);
+    value1 = LOW;
+    display.clear();
+    display.drawString(0, 16, "LED 1: OFF");
+  }
+    if (request.indexOf("/LED2=ON") != -1)  {
+    digitalWrite(ledPin2, LOW);
+    value2 = HIGH;
+    display.clear();
+    display.drawString(0, 32, "LED 2: ON");
+  }
+  if (request.indexOf("/LED2=OFF") != -1)  {
+    digitalWrite(ledPin2, HIGH);
+    value2 = LOW;
+    display.clear();
+    display.drawString(0, 32, "LED 2: OFF");
+  }
+  if (request.indexOf("/LED3=ON") != -1)  {
+    digitalWrite(ledPin3, LOW);
+    value2 = HIGH;
+    display.clear();
+    display.drawString(0, 48, "LED 3: ON");
+  }
+  if (request.indexOf("/LED3=OFF") != -1)  {
+    digitalWrite(ledPin3, HIGH);
+    value2 = LOW;
+    display.clear();
+    display.drawString(0, 48, "LED 3: OFF");
+  }
+ 
+//digitalWrite(LED_BUILTIN, value);
+ display.display();
+  // Return the response
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/html");
+  client.println(""); //  do not forget this one
+  client.println("<!DOCTYPE HTML>");
+  client.println("<html>");
+ 
+  client.print("Led 1 is now: ");
+ 
+  if(value1 == HIGH) {
+    client.print("On");
+  } else {
+    client.print("Off");
+  }
+  client.println("<br>");
+  client.println("<a href=\"/LED1=ON\"\"><button>Turn On </button></a>");
+  client.println("<a href=\"/LED1=OFF\"\"><button>Turn Off </button></a><br />");  
+  client.println("<br>");
+
+  client.print("Led 2 is now: ");
+ 
+  if(value2 == HIGH) {
+    client.print("On");
+  } else {
+    client.print("Off");
+  }
+  client.println("<br>");
+  client.println("<a href=\"/LED2=ON\"\"><button>Turn On </button></a>");
+  client.println("<a href=\"/LED2=OFF\"\"><button>Turn Off </button></a><br />");  
+
+  client.println("<br>");
+  
+  client.print("Led 3 is now: ");
+ 
+  if(value3 == HIGH) {
+    client.print("On");
+  } else {
+    client.print("Off");
+  }
+  client.println("<br>");
+  client.println("<a href=\"/LED3=ON\"\"><button>Turn On </button></a>");
+  client.println("<a href=\"/LED3=OFF\"\"><button>Turn Off </button></a><br />");  
+
+
+  
+  client.println("</html>");
+ 
+  delay(1);
+  Serial.println("Client disonnected");
+  Serial.println("");
+ 
+}
+
+void setupWiFi()
+{
+  WiFi.mode(WIFI_AP);
+
+  // Do a little work to get a unique-ish name. Append the
+  // last two bytes of the MAC (HEX'd) to "ThingDev-":
+  uint8_t mac[WL_MAC_ADDR_LENGTH];
+  WiFi.softAPmacAddress(mac);
+  String macID = String(mac[WL_MAC_ADDR_LENGTH - 2], HEX) +
+                 String(mac[WL_MAC_ADDR_LENGTH - 1], HEX);
+  macID.toUpperCase();
+  //String AP_NameString = "ThingDev-" + macID;
+  String AP_NameString = "controlNode";
+  
+
+  char AP_NameChar[AP_NameString.length() + 1];
+  memset(AP_NameChar, 0, AP_NameString.length() + 1);
+
+  for (int i=0; i<AP_NameString.length(); i++)
+    AP_NameChar[i] = AP_NameString.charAt(i);
+
+  WiFi.softAP(AP_NameChar, WiFiAPPSK);
+}
+
+void initHardware()
+{
+  Serial.begin(115200);
+  pinMode(DIGITAL_PIN, INPUT_PULLUP);
+  pinMode(LED_BUILTIN, OUTPUT);
+  //digitalWrite(LED_BUILTIN, HIGH);
+  // Don't need to set ANALOG_PIN as input, 
+  // that's all it can be.
+}
+
+void setupOLED()
+{
+  display.init();
+  display.flipScreenVertically();
+  display.setFont(ArialMT_Plain_16);
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  display.clear();
+}
+
